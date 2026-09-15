@@ -1,0 +1,85 @@
+[DEFAULT]
+debug = ${CKAN_DEBUG}
+
+[app:main]
+use = egg:ckan
+
+ckan.plugins = stats text_view image_view dsaudit activity tabledesigner datatables_view datastore xloader pdf_view contact ${CKAN_EXTRA_PLUGINS}
+
+sqlalchemy.url = postgresql://${CKAN_DB_USER}:${CKAN_DB_PASSWORD}@${CKAN_DB_HOST}:${CKAN_DB_PORT}/${CKAN_DB_NAME}
+solr_url = ${CKAN_SOLR_URL}
+ckan.redis.url = ${CKAN_REDIS_URL}
+
+ckan.site_url = ${CKAN_SITE_URL}
+ckan.site_id = default
+ckan.storage_path = /var/lib/ckan/storage
+ckan.max_resource_size = ${CKAN_MAX_RESOURCE_SIZE}
+
+ckan.locale_default = en
+ckan.locales_offered = en fr
+
+beaker.session.key = ckan
+beaker.session.secret = ${CKAN_SESSION_SECRET}
+SECRET_KEY = ${CKAN_SECRET_KEY}
+app_instance_uuid = ${CKAN_APP_INSTANCE_UUID}
+
+ckan.datastore.write_url = postgresql://${CKAN_DATASTORE_DB_USER}:${CKAN_DATASTORE_DB_PASSWORD}@${CKAN_DB_HOST}:${CKAN_DB_PORT}/${CKAN_DATASTORE_DB_NAME}
+ckan.datastore.read_url = postgresql://${CKAN_DATASTORE_READONLY_USER}:${CKAN_DATASTORE_READONLY_PASSWORD}@${CKAN_DB_HOST}:${CKAN_DB_PORT}/${CKAN_DATASTORE_DB_NAME}
+
+ckanext.xloader.jobs_db.uri = ${CKAN_XLOADER_JOBS_DB_URI}
+# NOTE: Set this via the CKAN UI (Admin > Config) or by editing the ini
+# before using xloader; this placeholder just allows CKAN to start.
+ckanext.xloader.api_token = change-me-xloader-token
+ckanext.xloader.site_url = ${CKAN_INTERNAL_SITE_URL}
+ckanext.xloader.formats = csv application/csv
+
+ckan.views.default_views = image_view datatables_view text_view pdf_view ${CKAN_EXTRA_VIEWS}
+
+smtp.server = ${CKAN_EMAIL_SMTP_SERVER}
+smtp.starttls = ${CKAN_EMAIL_SMTP_STARTTLS}
+smtp.starttls_verify = ${CKAN_EMAIL_SMTP_STARTTLS_VERIFY}
+smtp.user = ${CKAN_EMAIL_SMTP_USER}
+smtp.password = ${CKAN_EMAIL_SMTP_PASSWORD}
+smtp.mail_from = ${CKAN_EMAIL_SMTP_MAIL_FROM}
+smtp.reply_to = ${CKAN_EMAIL_SMTP_REPLY_TO}
+email_to = ${CKAN_EMAIL_SMTP_EMAIL_TO}
+error_email_from = ${CKAN_EMAIL_SMTP_ERROR_EMAIL_FROM}
+
+[server:main]
+use = egg:waitress#main
+host = 0.0.0.0
+port = 5000
+
+[loggers]
+keys = root, ckan, werkzeug
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = INFO
+handlers = console
+
+[logger_ckan]
+level = INFO
+handlers = console
+qualname = ckan
+propagate = 0
+
+[logger_werkzeug]
+level = INFO
+handlers = console
+qualname = werkzeug
+propagate = 0
+
+[handler_console]
+class = StreamHandler
+args = (sys.stdout,)
+level = INFO
+formatter = generic
+
+[formatter_generic]
+format = %(asctime)s %(levelname)-5.5s [%(name)s] %(message)s

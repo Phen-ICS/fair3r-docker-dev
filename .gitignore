@@ -1,0 +1,14 @@
+.env
+.vagrant
+.vs
+.mypy_cache
+.cursor
+.idea
+.vscode
+.crt
+.key
+certs/*.key
+certs/*.crt
+nginx/certs/*.key
+nginx/certs/*.crt
+src_extensions/*
