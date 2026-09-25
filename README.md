@@ -3,96 +3,188 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14-blueviolet)
 ![Redis](https://img.shields.io/badge/Redis-7-red)
 
-# Fair3R CKAN — local development environment
+# CKAN 2.11 Fair3r Docker Compose Deployment
 
-Docker Compose stack to run [Fair3R](https://fair3r.fr) (CKAN 2.11) locally,
-for developing and testing its extensions:
-[ckanext-fair3r](https://github.com/Phen-ICS/ckanext-fair3r),
-[ckanext-doi](https://github.com/Phen-ICS/ckanext-doi),
-[ckanext-pages](https://github.com/Phen-ICS/ckanext-pages),
-[ckanext-plotly](https://github.com/Phen-ICS/ckanext-plotly).
+This project deploys CKAN `2.11.5` with:
 
-This repo covers local development only. Validation/production deployment is
-managed separately.
-
-Includes:
-
-- `ckan` (CKAN web instance + xloader worker, managed by `supervisord`)
-- `db` (`postgres:14`)
-- `solr` (`ckan/ckan-solr:2.11-solr9`)
+- `ckan` (ckan web instance + xloader worker, managed by `supervisord`)
+- `db` (a database for ckan and extensions: `postgres:14`)
+- `solr` (the search engine: `ckan/ckan-solr:2.11-solr9`)
 - `redis` (`redis:7-alpine`)
-- `nginx` (local HTTPS access)
+- `nginx` (webserver for browser access)
 
 ## 1) Prerequisites
 
 - Docker Engine + Docker Compose plugin
-- Ports used: `8085` (HTTPS through nginx), `5000` (direct CKAN, dev override), `5435` (optional DB access from host)
+- Needed ports:
+  - `8085` (HTTPS through nginx)
+  - `5000` (direct CKAN in dev override)
+  - `5435` (optional DB access from host)
 
 ## 2) Setup `.env`
+
+Create your local env file:
 
 ```bash
 cp .env.example .env
 ```
 
-Update at least:
+Update at least the following values in `.env`:
 
-- Secrets: `CKAN_SESSION_SECRET`, `CKAN_APP_INSTANCE_UUID`, `CKAN_DB_PASSWORD`,
-  `CKAN_DATASTORE_DB_PASSWORD`, `CKAN_DATASTORE_READONLY_PASSWORD`
-- `CKAN_SITE_URL` (e.g. `https://localhost:8085`)
-- `FAIR3R_CONTEXT=DEV`
-- `FDF_SCHEMA_LOCAL_PATH` — absolute host path to a clone of
-  [`fair3r-fdf-schema`](https://github.com/Phen-ICS/fair3r-fdf-schema) (the
-  directory containing `fdf_schema.json`). Leave empty to have the entrypoint
-  download the latest schema from GitHub instead.
+- Secrets:
+  - `CKAN_SESSION_SECRET`
+  - `CKAN_APP_INSTANCE_UUID`
+  - `CKAN_DB_PASSWORD`
+  - `CKAN_DATASTORE_DB_PASSWORD`
+  - `CKAN_DATASTORE_READONLY_PASSWORD`
+- CKAN URLs:
+  - `CKAN_SITE_URL` (public URL used by users, eg `https://localhost:8085`, or `https://mydomain.eu`)
+  - `CKAN_INTERNAL_SITE_URL` (container-internal URL for xloader, keep `http://ckan:5000`)
+- Extension context:
+  - `FAIR3R_CONTEXT` must be one of `DEV`, `INTEGRATION`, `VALIDATION`, `PRODUCTION`
+- FDF schema (DEV only):
+  - `FDF_SCHEMA_LOCAL_PATH` — absolute path on the host to a clone of
+    [`fair3r-fdf-schema`](https://github.com/Phen-ICS/fair3r-fdf-schema)
+    (the directory that contains `fdf_schema.json`). Leave empty in
+    `INTEGRATION` / `VALIDATION` / `PRODUCTION`.
 
-## 3) Get the extensions
+Mode behavior:
 
-```bash
-git clone https://github.com/Phen-ICS/ckanext-fair3r.git src_extensions/ckanext-fair3r
-git clone https://github.com/Phen-ICS/ckanext-doi.git src_extensions/ckanext-doi
-git clone https://github.com/Phen-ICS/ckanext-pages.git src_extensions/ckanext-pages
-git clone https://github.com/Phen-ICS/ckanext-plotly.git src_extensions/ckanext-plotly
-```
+- `FAIR3R_CONTEXT=DEV`:
+  - dev supervisor profile
+  - CKAN reloader enabled
+  - editable install from `/plugins` mount
+  - FDF schema: if `FDF_SCHEMA_LOCAL_PATH` points at a local clone, Fair3R reads
+    `fdf_schema.json` and `i18n/` from that mount (no GitHub download). If unset,
+    the entrypoint downloads the latest schema from GitHub like other contexts.
+- `FAIR3R_CONTEXT=INTEGRATION|VALIDATION|PRODUCTION`:
+  - production supervisor profile (same as packaged `supervisord.prod.conf` in the image)
+  - CKAN reloader disabled
+  - extension install at image build time (from git URLs)
 
-`src_extensions` is mounted at `/plugins`; the entrypoint installs each
-mounted directory with `pip install -e` on every container start (directory
-name doesn't need to match the pip distribution name).
+## 3) Fair3R extensions via GitLab PyPI (`INTEGRATION` / `VALIDATION` / `PRODUCTION`)
 
-Optionally, clone the FDF schema repo anywhere outside `src_extensions` and
-point `FDF_SCHEMA_LOCAL_PATH` at it to edit schema/translations live without
-rebuilding:
+For non-development contexts, extensions are pulled from GitLab Package Registry PyPI **when the CKAN container starts** (credentials from `.env`, not bundled in the image).
 
-```bash
-git clone https://github.com/Phen-ICS/fair3r-fdf-schema.git /path/to/fair3r-fdf-schema
-```
+In `.env`:
 
-After changing `FDF_SCHEMA_LOCAL_PATH`, recreate the CKAN container so Compose
-reattaches the bind mount (`docker compose up -d` is enough; `restart` is
-not). Schema JSON edits are picked up on the next page load — no restart
-needed.
+- `FAIR3R_CONTEXT=PRODUCTION` (or `INTEGRATION` / `VALIDATION`)
+- `CKAN_DEBUG` = **false**
+- `GITLAB_EXTENSIONS_PYPI_HOST` (your GitLab instance's Package Registry hostname)
+  - `FAIR3R_EXTENSION_PYPI_TOKEN`
+  - `PAGE_EXTENSION_PYPI_TOKEN`
+  - `DOI_EXTENSION_PYPI_TOKEN`
+  - `PLOTLY_EXTENSION_PYPI_TOKEN`
+  - `FAIR3R_PYPI_PROJECT_ID`
+  - `PAGE_PYPI_PROJECT_ID`
+  - `DOI_PYPI_PROJECT_ID`
+  - `PLOTLY_PYPI_PROJECT_ID`
+- Enable plugins:
+  - `CKAN_EXTRA_PLUGINS="fair3r doi pages plotly_explorer"`
+  - `CKAN_EXTRA_VIEWS="plotly_explorer"`
 
-## 4) Start
+Then build and start:
 
 ```bash
 docker compose up -d --build
 ```
 
-Editable installs re-apply on every container start; CKAN's dev reloader
-watches code changes where supported.
 
-Other useful commands:
+## 4) Development (`DEV`): GitLab PyPI and/or editable `src_extensions`
+
+Use **`FAIR3R_CONTEXT=DEV`** when developing.
+
+Leave the GitLab PyPI token variables (and host) in `.env` empty. On startup the entrypoint will not installs the four extensions from the registry.
+
+Clone into `src_extensions` (mounted as `/plugins`; the directory name is arbitrary and does not need to match the pip distribution name — e.g. `src_extensions/ckanext-doi` installs as `ckanext-fair3r-doi`, `src_extensions/ckanext-pages` installs as `ckanext-fair3r-pages`, `src_extensions/ckanext-plotly` installs as `ckanext-fair3r-plotly`).
+2. Set the same GitLab tokens if you **also** want wheels for extensions you are **not** mounting; for any directory under `/plugins`, the entrypoint runs `pip install -e` **after** the registry step so your tree wins.
+
+In `.env`:
+
+- `FAIR3R_CONTEXT=DEV`
+- `CKAN_DEBUG=true`
+- Tokens and/or mounted repos as needed
+- `CKAN_EXTRA_PLUGINS="fair3r doi pages plotly_explorer"`
+- `CKAN_EXTRA_VIEWS="plotly_explorer"`
+- `FDF_SCHEMA_LOCAL_PATH=/absolute/path/to/fair3r-fdf-schema` (your local clone
+  of [`fair3r-fdf-schema`](https://github.com/Phen-ICS/fair3r-fdf-schema))
+
+Clone your extensions into `src_extensions`:
+
+```bash
+git clone <fair3r_repo_url> src_extensions/ckanext-fair3r
+git clone <doi_repo_url> src_extensions/ckanext-doi
+git clone <pages_repo_url> src_extensions/ckanext-pages
+git clone <plotly_repo_url> src_extensions/ckanext-plotly
+```
+
+Clone the FDF schema repo anywhere on your machine (it does **not** live under
+`src_extensions`). Edit schema files on a feature branch of that clone; Fair3R
+DEV reads them live from the mount, so you do not copy JSON into
+`ckanext-fair3r` and a container restart cannot overwrite your work. A reviewer
+checks out the same branch in their own clone, sets `FDF_SCHEMA_LOCAL_PATH`,
+and recreates the stack (`docker compose up -d`) to test the form.
+
+```bash
+git clone git@github.com:Phen-ICS/fair3r-fdf-schema.git /path/to/fair3r-fdf-schema
+```
+
+After changing `FDF_SCHEMA_LOCAL_PATH`, recreate the CKAN container so Compose
+reattaches the bind mount (`docker compose up -d` is enough; `restart` is not).
+Schema JSON edits themselves are picked up on the next page load — no restart.
+
+Then start:
+
+```bash
+docker compose up -d --build
+```
+
+Editable installs apply on each container start while CKAN’s dev reloader watches code changes where supported.
+
+## 5) Start, restart, stop services
+
+Start (or start again in background):
+
+```bash
+docker compose up -d
+```
+
+Rebuild changed images and restart:
+
+```bash
+docker compose up -d --build
+```
+
+Restart running containers (no rebuild):
+
+```bash
+docker compose restart
+```
+
+Stop and remove containers/networks:
+
+```bash
+docker compose down
+```
+
+**Full reset** (ALSO REMOVE VOLUMES):
+
+```bash
+docker compose down -v --remove-orphans
+```
+
+Useful checks:
 
 ```bash
 docker compose ps
 docker compose logs -f ckan
-docker compose restart          # restart without rebuilding
-docker compose down             # stop and remove containers/networks
-docker compose down -v --remove-orphans   # full reset, also removes volumes
 ```
 
-## 5) Create users
+## 6) Create users
 
-Regular user:
+### Create a regular user
+
+#### In DEV
 
 ```bash
 docker compose exec ckan ckan -c /srv/app/ckan.ini user add jdoe \
@@ -101,32 +193,70 @@ docker compose exec ckan ckan -c /srv/app/ckan.ini user add jdoe \
   fullname="John Doe"
 ```
 
-Sysadmin:
+- `jdoe` is the username (required, first positional argument)
+- `email=` is required
+- `password=` is required (minimum 8 characters); if omitted, CKAN prompts for it
+- `fullname=` is optional
+
+Useful related commands:
+
+```bash
+docker compose exec ckan ckan -c /srv/app/ckan.ini user list
+docker compose exec ckan ckan -c /srv/app/ckan.ini user show jdoe
+docker compose exec ckan ckan -c /srv/app/ckan.ini user remove jdoe
+```
+
+#### In integration, validation or production
+
+```bash
+sudo ckan -c /etc/ckan/default/ckan.ini user add jdoe \
+  email=jdoe@example.com \
+  password=StrongPassword123! \
+  fullname="John Doe"
+```
+
+### Create a sysadmin user
+
+#### In DEV
+
+Use the helper script:
 
 ```bash
 docker compose exec ckan /srv/app/scripts/create_sysadmin.sh admin admin@example.com "StrongPassword123!"
 ```
 
-Or set `CKAN_BOOTSTRAP_SYSADMIN_NAME` / `_EMAIL` / `_PASSWORD` in `.env` for
-automatic bootstrap at startup.
+Or use automatic bootstrap at startup by setting in `.env`:
 
-## 6) Notes
+- `CKAN_BOOTSTRAP_SYSADMIN_NAME`
+- `CKAN_BOOTSTRAP_SYSADMIN_EMAIL`
+- `CKAN_BOOTSTRAP_SYSADMIN_PASSWORD`
 
-- `CKAN_INTERNAL_SITE_URL` must stay reachable from inside the `ckan`
-  container (default `http://ckan:5000`), otherwise xloader fails (e.g. CSV
-  uploads to the datastore).
-- Startup is idempotent: fresh DB runs `ckan db init`, existing DB runs `ckan db upgrade`.
-- DEV uses Python 3.12.13 (from the `ckan-base:2.11.5` image, itself on
-  Debian trixie).
+### In integration, validation or production:
 
-## 7) Updating translations
+```bash
+sudo ckan -c /etc/ckan/default/ckan.ini sysadmin add admin email=admin@example.com name=admin
+```
 
-The UI is available in English (default) and French. Maintain translations in
-`ckanext-fair3r`, `ckanext-doi`, and `ckanext-pages` (each ships
-`i18n/<domain>.pot` and `i18n/fr/LC_MESSAGES/<domain>.{po,mo}` — commit both).
+## 7) Notes
+
+- `CKAN_INTERNAL_SITE_URL` should stay reachable from inside the `ckan` container (default `http://ckan:5000`), otherwise xloader will fail (for exemple, you will not be able to upload csv(s) into the datastore).
+- Startup is idempotent:
+  - fresh DB: `ckan db init`
+  - existing DB: `ckan db upgrade`
+
+## 8) Updating translations
+
+The UI is available in **English** (default) and **French** (`ckan.locale_default`
+and `ckan.locales_offered` in `ckan/config/ckan.ini.template`). CKAN core ships
+its own French catalog; maintain translations in three of the four Fair3R extensions under
+`src_extensions/` (`ckanext-fair3r`, `ckanext-doi`, `ckanext-pages`). Each ships `i18n/<domain>.pot` and
+`i18n/fr/LC_MESSAGES/<domain>.{po,mo}` — commit both `.po` and `.mo`.
 
 Wrap new user-visible strings before extracting: Python `toolkit._()`, Jinja
 `{{ _('…') }}` / `{% trans %}`, CKAN JS modules `_("…")`.
+
+In **DEV**, run Babel inside the `ckan` container (extensions mounted at
+`/plugins/ckanext-*`):
 
 ```bash
 docker compose exec ckan bash -lc '
@@ -138,8 +268,8 @@ docker compose exec ckan bash -lc '
 '
 ```
 
-Edit `i18n/fr/LC_MESSAGES/*.po` — fill empty `msgstr`, remove fuzzy flags — then:
-
+Edit i18n/fr/LC_MESSAGES/*.po — fill empty msgstr, remove fuzzy flags.
+Then, execute following command:
 ```bash
 docker compose exec ckan bash -lc '
   for ext in fair3r doi pages; do
@@ -150,9 +280,22 @@ docker compose exec ckan bash -lc '
 docker compose restart ckan
 ```
 
-FDF schema strings (`fdf_schema.json`) are translated separately, via sidecar
-`i18n/<locale>.json` files maintained in
-[`fair3r-fdf-schema`](https://github.com/Phen-ICS/fair3r-fdf-schema):
+**fair3r FDF schema** — user-facing strings in `fdf_schema.json` are translated
+via sidecar files in `i18n/<locale>.json`, maintained in the
+[`fair3r-fdf-schema`](https://github.com/Phen-ICS/fair3r-fdf-schema) repository
+(separate from Babel).
+
+On **validation / integration / production**, the nightly `fair3r update-schema`
+cron downloads both the schema and locale files into `schema/` and
+`schema/i18n/` inside the installed extension.
+
+In **DEV**, set `FDF_SCHEMA_LOCAL_PATH` in `.env` when you work on a schema
+branch: the Compose override mounts that clone at `/fdf-schema` and Fair3R reads
+it live (no GitHub download on startup). Leave `FDF_SCHEMA_LOCAL_PATH` empty to
+use the GitHub download at container start instead — same as validation /
+integration / production (nightly cron on the VMs).
+
+Contributors edit translations in the schema repo:
 
 ```bash
 cd /path/to/fair3r-fdf-schema
@@ -163,3 +306,8 @@ python tools/i18n.py check --locale fr      # verify all keys are translated
 Sidecar keys use stable ids, e.g.
 `sections.title.fields.publication_year.help`. English text in
 `fdf_schema.json` is the fallback when a translation is missing.
+
+On **validation / integration / production** VMs, publish updated extension
+wheels to GitLab PyPI and re-deploy; restart `ckan-web` and `ckan-worker` so
+gettext reloads.
+
